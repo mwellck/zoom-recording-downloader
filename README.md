@@ -1,4 +1,10 @@
+# Recall.ai - API for meeting recording
+If you’re looking for a meeting recording API, consider checking out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=zoom-recording-downloader), an API that records Zoom, Google Meet, Microsoft Teams, In-person meetings, and more.
+
+---
+
 # ⚡️ zoom-recording-downloader ⚡️ 
+
 ## ☁️ Now with Google Drive support ☁️
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11%20%2B-blue.svg)](https://www.python.org/) [![License](https://img.shields.io/badge/license-MIT-brown.svg)](https://raw.githubusercontent.com/ricardorodrigues-ca/zoom-recording-downloader/master/LICENSE)
