@@ -18,6 +18,21 @@
         "max_retries": 3,
         "failed_log": "failed-uploads.log"
     },
+    "S3": {
+        "_comment": "Optional: Only needed if using S3 upload feature (AWS S3 or DigitalOcean Spaces)",
+        "aws_access_key_id": "<YOUR_AWS_ACCESS_KEY_ID>",
+        "aws_secret_access_key": "<YOUR_AWS_SECRET_ACCESS_KEY>",
+        "region_name": "us-east-1",
+        "bucket_name": "<YOUR_S3_BUCKET_NAME>",
+        "endpoint_url": "",
+        "_endpoint_url_comment": "Leave empty for AWS S3. For DigitalOcean Spaces use: https://<region>.digitaloceanspaces.com (e.g., https://nyc3.digitaloceanspaces.com)",
+        "root_folder_name": "zoom-recording-downloader",
+        "storage_class": "STANDARD",
+        "_storage_class_comment": "Options: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE",
+        "retry_delay": 5,
+        "max_retries": 3,
+        "failed_log": "failed-uploads.log"
+    },
     "Recordings": {
         "start_year": "2024",
         "start_month": "1",

@@ -1,17 +1,17 @@
 ## Sponsorships
 
 # Recall.ai - API for meeting recording
-If you’re looking for a meeting recording API, consider checking out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=zoom-recording-downloader), an API that records Zoom, Google Meet, Microsoft Teams, In-person meetings, and more.
+If you're looking for a meeting recording API, consider checking out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=zoom-recording-downloader), an API that records Zoom, Google Meet, Microsoft Teams, In-person meetings, and more.
 
 ---
 
 # ⚡️ zoom-recording-downloader ⚡️ 
 
-## ☁️ Now with Google Drive support ☁️
+## ☁️ Now with Google Drive, Amazon S3 & DigitalOcean Spaces support ☁️
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11%20%2B-blue.svg)](https://www.python.org/) [![License](https://img.shields.io/badge/license-MIT-brown.svg)](https://raw.githubusercontent.com/ricardorodrigues-ca/zoom-recording-downloader/master/LICENSE)
 
-**Zoom Recording Downloader** is a cross-platform Python app that utilizes Zoom's API (v2) to download and organize all cloud recordings from a Zoom Business account to local storage or Google Drive.
+**Zoom Recording Downloader** is a cross-platform Python app that utilizes Zoom's API (v2) to download and organize all cloud recordings from a Zoom Business account to local storage, Google Drive, Amazon S3, or DigitalOcean Spaces.
 
 ## Screenshot ##
 ![screenshot](screenshot.png)
@@ -168,14 +168,196 @@ Consider adding `client_secrets.json` to your .gitignore file.
 
 Note: When you first run the script with Google Drive enabled, it will open your default browser for authentication. After authorizing the application, the token will be saved locally and reused for future runs.
 
-5. Run command:
+## Amazon S3 Setup (Optional) ##
+
+To enable Amazon S3 upload support:
+
+1. Create an S3 Bucket (if you don't have one):
+   - Go to [AWS S3 Console](https://s3.console.aws.amazon.com/)
+   - Click "Create bucket"
+   - Choose a unique bucket name
+   - Select your preferred region
+   - Configure other settings as needed
+
+2. Set up AWS credentials (choose one method):
+
+   **Option A: Configuration File**
+   ```json
+   {
+       "S3": {
+           "aws_access_key_id": "YOUR_ACCESS_KEY",
+           "aws_secret_access_key": "YOUR_SECRET_KEY",
+           "region_name": "us-east-1",
+           "bucket_name": "your-bucket-name"
+       }
+   }
+   ```
+
+   **Option B: AWS Credentials File** (~/.aws/credentials)
+   ```
+   [default]
+   aws_access_key_id = YOUR_ACCESS_KEY
+   aws_secret_access_key = YOUR_SECRET_KEY
+   ```
+
+   **Option C: Environment Variables**
+   ```bash
+   export AWS_ACCESS_KEY_ID=YOUR_ACCESS_KEY
+   export AWS_SECRET_ACCESS_KEY=YOUR_SECRET_KEY
+   export AWS_DEFAULT_REGION=us-east-1
+   ```
+
+   **Option D: IAM Role** (for EC2 instances)
+   - Attach an IAM role with S3 permissions to your EC2 instance
+   - No credentials needed in config
+
+3. Required IAM Permissions:
+   ```json
+   {
+       "Version": "2012-10-17",
+       "Statement": [
+           {
+               "Effect": "Allow",
+               "Action": [
+                   "s3:PutObject",
+                   "s3:GetObject",
+                   "s3:ListBucket",
+                   "s3:HeadBucket"
+               ],
+               "Resource": [
+                   "arn:aws:s3:::your-bucket-name",
+                   "arn:aws:s3:::your-bucket-name/*"
+               ]
+           }
+       ]
+   }
+   ```
+
+4. Update your config:
+	```json
+	{
+		"S3": {
+			"aws_access_key_id": "YOUR_ACCESS_KEY",
+			"aws_secret_access_key": "YOUR_SECRET_KEY",
+			"region_name": "us-east-1",
+			"bucket_name": "your-bucket-name",
+			"root_folder_name": "zoom-recording-downloader",
+			"storage_class": "STANDARD",
+			"retry_delay": 5,
+			"max_retries": 3,
+			"failed_log": "failed-uploads.log"
+		}
+	}
+	```
+
+**Storage Classes:** You can specify different S3 storage classes to optimize costs:
+- `STANDARD` - General purpose (default)
+- `STANDARD_IA` - Infrequent access, lower storage cost
+- `INTELLIGENT_TIERING` - Automatic cost optimization
+- `GLACIER` - Archive storage with retrieval delay
+- `DEEP_ARCHIVE` - Lowest cost, longest retrieval time
+
+## DigitalOcean Spaces Setup (Optional) ##
+
+To enable DigitalOcean Spaces upload support:
+
+1. Create a Space:
+   - Go to [DigitalOcean Spaces](https://cloud.digitalocean.com/spaces)
+   - Click "Create a Space"
+   - Choose a datacenter region (e.g., NYC3, SFO3, AMS3)
+   - Choose a unique name for your Space
+   - Set file listing to "Private" (recommended)
+
+2. Generate API Keys:
+   - Go to API → Spaces access keys
+   - Click "Generate New Key"
+   - Give it a name (e.g., "Zoom Recording Downloader")
+   - Save both the Access Key and Secret Key
+
+3. Update your config:
+	```json
+	{
+		"S3": {
+			"aws_access_key_id": "YOUR_SPACES_ACCESS_KEY",
+			"aws_secret_access_key": "YOUR_SPACES_SECRET_KEY",
+			"region_name": "us-east-1",
+			"bucket_name": "your-space-name",
+			"endpoint_url": "https://nyc3.digitaloceanspaces.com",
+			"root_folder_name": "zoom-recording-downloader",
+			"retry_delay": 5,
+			"max_retries": 3,
+			"failed_log": "failed-uploads.log"
+		}
+	}
+	```
+
+**Important Settings for DigitalOcean Spaces:**
+- **endpoint_url**: Must be set to your region's endpoint (e.g., `https://nyc3.digitaloceanspaces.com`, `https://sfo3.digitaloceanspaces.com`, `https://ams3.digitaloceanspaces.com`)
+- **region_name**: Can be left as `us-east-1` (required by boto3 but not used by Spaces)
+- **bucket_name**: Your Space name (without the region prefix)
+
+**Available Regions:**
+- NYC3: `https://nyc3.digitaloceanspaces.com`
+- SFO3: `https://sfo3.digitaloceanspaces.com`
+- AMS3: `https://ams3.digitaloceanspaces.com`
+- SGP1: `https://sgp1.digitaloceanspaces.com`
+- FRA1: `https://fra1.digitaloceanspaces.com`
+
+Note: Leave `endpoint_url` empty or omit it entirely when using AWS S3. The endpoint_url is only needed for S3-compatible services like DigitalOcean Spaces.
+
+## Running the Script ##
 
 ```sh
 $ python zoom-recording-downloader.py
 ```
 
 When prompted, choose your preferred storage method:
-1. Local Storage - Saves recordings to your local machine
-2. Google Drive - Uploads recordings to your Google Drive account
+1. **Local Storage** - Saves recordings to your local machine
+2. **Google Drive** - Uploads recordings to your Google Drive account
+3. **Amazon S3 / DigitalOcean Spaces** - Uploads recordings to S3 or Spaces
 
-Note: For Google Drive uploads, files are temporarily downloaded to local storage before being uploaded, then automatically deleted after successful upload.
+**Note:** For cloud storage options (Google Drive, S3, or Spaces), files are temporarily downloaded to local storage before being uploaded, then automatically deleted after successful upload.
+
+## Cloud Storage Features ##
+
+All cloud storage options include:
+- ✅ Automatic retry logic for failed uploads
+- ✅ Configurable retry attempts and delays
+- ✅ Failed upload logging for troubleshooting
+- ✅ Timestamped root folders to organize different download runs
+- ✅ Automatic local file cleanup after successful upload
+- ✅ Organized folder structure matching your configuration
+
+## Troubleshooting ##
+
+### Google Drive Issues
+- If authentication fails, delete `token.json` and re-authenticate
+- Ensure all required scopes are added to your OAuth consent screen
+- Check that the Google Drive API is enabled in your project
+
+### S3/Spaces Issues
+- Verify your credentials are correct
+- Ensure your bucket/space name is correct (without region prefix for Spaces)
+- Check that your IAM permissions include all required actions
+- For Spaces, verify the endpoint_url matches your region
+- Review `failed-uploads.log` for detailed error messages
+
+### General Issues
+- Check that Python 3.11+ is installed
+- Verify all dependencies are installed: `pip3 install -r requirements.txt`
+- Ensure your Zoom OAuth app is activated and has the required scopes
+- Check the `completed-downloads.log` to see which recordings were processed
+
+## Security Best Practices ##
+
+- Never commit credentials to version control
+- Add `client_secrets.json`, `token.json`, and your config file to `.gitignore`
+- Use IAM roles when running on AWS infrastructure
+- Rotate API keys and access tokens regularly
+- Use separate credentials with minimal required permissions
+- Enable encryption on your S3 buckets or Spaces
+- Review access logs periodically
+
+## License ##
+
+This project is licensed under the MIT License. See the LICENSE file for details.

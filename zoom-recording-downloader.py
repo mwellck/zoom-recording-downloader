@@ -27,6 +27,8 @@ import requests
 import tqdm as progress_bar
 from zoneinfo import ZoneInfo
 from google_drive_client import GoogleDriveClient
+from s3_client import S3Client
+
 
 class Color:
     PURPLE = "\033[95m"
@@ -40,6 +42,7 @@ class Color:
     UNDERLINE = "\033[4m"
     END = "\033[0m"
 
+
 CONF_PATH = "zoom-recording-downloader.conf"
 
 # Load configuration file and check for proper JSON syntax
@@ -50,11 +53,12 @@ except json.JSONDecodeError as e:
     print(f"{Color.RED}### Error parsing JSON in {CONF_PATH}: {e}")
     system.exit(1)
 except FileNotFoundError:
-    print(f"{Color.RED}### Configuqration file {CONF_PATH} not found")
+    print(f"{Color.RED}### Configuration file {CONF_PATH} not found")
     system.exit(1)
 except Exception as e:
     print(f"{Color.RED}### Unexpected error: {e}")
     system.exit(1)
+
 
 def config(section, key, default=''):
     try:
@@ -66,18 +70,21 @@ def config(section, key, default=''):
         else:
             return default
 
+
 ACCOUNT_ID = config("OAuth", "account_id", LookupError)
 CLIENT_ID = config("OAuth", "client_id", LookupError)
 CLIENT_SECRET = config("OAuth", "client_secret", LookupError)
 
-APP_VERSION = "3.1 (Google Drive Edition)"
+APP_VERSION = "3.2 (Google Drive, S3 & DigitalOcean Spaces Edition)"
 
 API_ENDPOINT_USER_LIST = "https://api.zoom.us/v2/users"
 
 RECORDING_START_YEAR = config("Recordings", "start_year", date.today().year)
 RECORDING_START_MONTH = config("Recordings", "start_month", 1)
 RECORDING_START_DAY = config("Recordings", "start_day", 1)
-RECORDING_START_DATE = parser.parse(config("Recordings", "start_date", f"{RECORDING_START_YEAR}-{RECORDING_START_MONTH}-{RECORDING_START_DAY}")).replace(tzinfo=timezone.utc)
+RECORDING_START_DATE = parser.parse(config("Recordings", "start_date",
+                                           f"{RECORDING_START_YEAR}-{RECORDING_START_MONTH}-{RECORDING_START_DAY}")).replace(
+    tzinfo=timezone.utc)
 RECORDING_END_DATE = parser.parse(config("Recordings", "end_date", str(date.today()))).replace(tzinfo=timezone.utc)
 DOWNLOAD_DIRECTORY = config("Storage", "download_dir", 'downloads')
 COMPLETED_MEETING_IDS_LOG = config("Storage", "completed_log", 'completed-downloads.log')
@@ -85,16 +92,14 @@ COMPLETED_MEETING_IDS = set()
 
 MEETING_TIMEZONE = ZoneInfo(config("Recordings", "timezone", 'UTC'))
 MEETING_STRFTIME = config("Recordings", "strftime", '%Y.%m.%d - %I.%M %p UTC')
-MEETING_FILENAME = config("Recordings", "filename", '{meeting_time} - {topic} - {rec_type} - {recording_id}.{file_extension}')
+MEETING_FILENAME = config("Recordings", "filename",
+                          '{meeting_time} - {topic} - {rec_type} - {recording_id}.{file_extension}')
 MEETING_FOLDER = config("Recordings", "folder", '{topic} - {meeting_time}')
 
-# Google Drive configuration
+# Storage configuration
 GDRIVE_ENABLED = False
-GDRIVE_CREDENTIALS_FILE = config("GoogleDrive", "credentials_file", "service-account.json")
-GDRIVE_ROOT_FOLDER = config("GoogleDrive", "root_folder_name", "zoom-recording-downloader")
-GDRIVE_RETRY_DELAY = int(config("GoogleDrive", "retry_delay", "5"))
-GDRIVE_MAX_RETRIES = int(config("GoogleDrive", "max_retries", "3"))
-GDRIVE_FAILED_LOG = config("GoogleDrive", "failed_log", "failed-uploads.log")
+S3_ENABLED = False
+
 
 def setup_google_drive():
     """Initialize Google Drive client with OAuth authentication"""
@@ -105,14 +110,14 @@ def setup_google_drive():
             if choice.lower() != 'y':
                 system.exit(1)
             return None
-            
+
         if not drive_client.initialize_root_folder():
             print(f"{Color.RED}### Failed to create root folder in Google Drive{Color.END}")
             choice = input("Would you like to continue with local storage instead? (y/n): ")
             if choice.lower() != 'y':
                 system.exit(1)
             return None
-            
+
         return drive_client
     except Exception as e:
         print(f"{Color.RED}### Google Drive initialization failed: {str(e)}{Color.END}")
@@ -122,6 +127,30 @@ def setup_google_drive():
         return None
 
 
+def setup_s3():
+    """Initialize S3 client"""
+    try:
+        s3_client = S3Client(CONF.get('S3', {}))
+        if not s3_client.authenticate():
+            choice = input("Would you like to continue with local storage instead? (y/n): ")
+            if choice.lower() != 'y':
+                system.exit(1)
+            return None
+
+        if not s3_client.initialize_root_folder():
+            print(f"{Color.RED}### Failed to initialize S3 root folder{Color.END}")
+            choice = input("Would you like to continue with local storage instead? (y/n): ")
+            if choice.lower() != 'y':
+                system.exit(1)
+            return None
+
+        return s3_client
+    except Exception as e:
+        print(f"{Color.RED}### S3 initialization failed: {str(e)}{Color.END}")
+        choice = input("Would you like to continue with local storage instead? (y/n): ")
+        if choice.lower() != 'y':
+            system.exit(1)
+        return None
 
 
 def load_access_token():
@@ -179,7 +208,7 @@ def get_users():
                 user["email"],
                 user["id"],
                 user.get("first_name", ""),  # Use .get() with a default value
-                user.get("last_name", "")    # Use .get() with a default value
+                user.get("last_name", "")  # Use .get() with a default value
             )
             for user in user_data["users"]
         ])
@@ -256,7 +285,7 @@ def list_recordings(email):
     """ Start date now split into YEAR, MONTH, and DAY variables (Within 6 month range)
         then get recordings within that range
     """
-    
+
     recordings = []
 
     for start, end in per_delta(RECORDING_START_DATE, RECORDING_END_DATE, timedelta(days=30)):
@@ -322,7 +351,7 @@ def load_completed_meeting_ids():
 
 
 def handle_graceful_shutdown(signal_received, frame):
-    print(f"\n{Color.DARK_CYAN}SIGINT or CTRL-C detected. system.exiting gracefully.{Color.END}")
+    print(f"\n{Color.DARK_CYAN}SIGINT or CTRL-C detected. Exiting gracefully.{Color.END}")
 
     system.exit(0)
 
@@ -366,16 +395,22 @@ def main():
     print("\nChoose download method:")
     print("1. Local Storage")
     print("2. Google Drive")
-    choice = input("Enter choice (1-2): ")
+    print("3. Amazon S3 / DigitalOcean Spaces")
+    choice = input("Enter choice (1-3): ")
 
-    global GDRIVE_ENABLED
-    GDRIVE_ENABLED = (choice == "2")
+    global GDRIVE_ENABLED, S3_ENABLED
 
-    drive_service = None
-    if GDRIVE_ENABLED:
-        drive_service = setup_google_drive()
-        if not drive_service:
+    storage_service = None
+    if choice == "2":
+        GDRIVE_ENABLED = True
+        storage_service = setup_google_drive()
+        if not storage_service:
             GDRIVE_ENABLED = False
+    elif choice == "3":
+        S3_ENABLED = True
+        storage_service = setup_s3()
+        if not storage_service:
+            S3_ENABLED = False
 
     load_access_token()
     load_completed_meeting_ids()
@@ -432,13 +467,21 @@ def main():
                     full_filename = os.sep.join([sanitized_download_dir, sanitized_filename])
 
                     if download_recording(download_url, email, filename, folder_name):
-                        if GDRIVE_ENABLED and drive_service:
+                        # Upload to cloud storage if enabled
+                        upload_success = False
+
+                        if GDRIVE_ENABLED and storage_service:
                             print(f"    > Uploading to Google Drive...")
-                            success = drive_service.upload_file(full_filename, folder_name, sanitized_filename)
-                            if success and os.path.exists(full_filename):
-                                os.remove(full_filename)
-                                if not os.listdir(sanitized_download_dir):
-                                    os.rmdir(sanitized_download_dir)
+                            upload_success = storage_service.upload_file(full_filename, folder_name, sanitized_filename)
+                        elif S3_ENABLED and storage_service:
+                            print(f"    > Uploading to S3...")
+                            upload_success = storage_service.upload_file(full_filename, folder_name, sanitized_filename)
+
+                        # Clean up local file if upload was successful
+                        if upload_success and os.path.exists(full_filename):
+                            os.remove(full_filename)
+                            if os.path.exists(sanitized_download_dir) and not os.listdir(sanitized_download_dir):
+                                os.rmdir(sanitized_download_dir)
 
                 except Exception as e:
                     print(
