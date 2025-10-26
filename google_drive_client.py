@@ -8,6 +8,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
 
+
 class Color:
     PURPLE = "\033[95m"
     CYAN = "\033[96m"
@@ -19,6 +20,7 @@ class Color:
     BOLD = "\033[1m"
     UNDERLINE = "\033[4m"
     END = "\033[0m"
+
 
 SUCCESS_PAGE = """
 <!DOCTYPE html>
@@ -32,6 +34,7 @@ SUCCESS_PAGE = """
 </body>
 </html>
 """
+
 
 class GoogleDriveClient:
     SCOPES = [
@@ -49,7 +52,7 @@ class GoogleDriveClient:
     def authenticate(self):
         """Handle the OAuth flow and return True if successful."""
         print(f"{Color.DARK_CYAN}Initializing Google Drive authentication...{Color.END}")
-        
+
         creds = None
         token_file = self.config.get('token_file', 'token.json')
         secrets_file = self.config.get('client_secrets_file', 'client_secrets.json')
@@ -72,7 +75,7 @@ class GoogleDriveClient:
                 except Exception as e:
                     print(f"{Color.YELLOW}Token refresh failed: {e}. Initiating new authentication...{Color.END}")
                     creds = None
-            
+
             if not creds:
                 try:
                     flow = InstalledAppFlow.from_client_secrets_file(secrets_file, self.SCOPES)
@@ -89,12 +92,12 @@ class GoogleDriveClient:
         try:
             self.service = build('drive', 'v3', credentials=creds)
             self.credentials = creds
-            
+
             # Get user email
             user_info = self.service.about().get(fields="user").execute()
             email = user_info['user']['emailAddress']
             print(f"{Color.GREEN}Successfully authenticated as {email}{Color.END}")
-            
+
             return True
         except Exception as e:
             print(f"{Color.RED}Failed to initialize Drive service: {e}{Color.END}")
@@ -124,7 +127,7 @@ class GoogleDriveClient:
         }
         if parent_id:
             file_metadata['parents'] = [parent_id]
-        
+
         try:
             folder = self._handle_upload_with_refresh(
                 self.service.files().create(body=file_metadata, fields='id')
@@ -140,11 +143,11 @@ class GoogleDriveClient:
         for folder in folder_path.split(os.sep):
             if not folder:
                 continue
-            
+
             query = f"name='{folder}' and mimeType='application/vnd.google-apps.folder'"
             if current_parent:
                 query += f" and '{current_parent}' in parents"
-            
+
             try:
                 results = self._handle_upload_with_refresh(
                     self.service.files().list(
@@ -153,7 +156,7 @@ class GoogleDriveClient:
                         fields='files(id)'
                     )
                 )
-                
+
                 if results.get('files'):
                     current_parent = results['files'][0]['id']
                 else:
@@ -163,11 +166,11 @@ class GoogleDriveClient:
             except Exception as e:
                 print(f"{Color.RED}Failed to navigate folders: {str(e)}{Color.END}")
                 return None
-        
+
         return current_parent
 
     def upload_file(self, local_path, folder_name, filename):
-        """Upload file to Google Drive with retry logic."""
+        """Upload file to Google Drive with retry logic and progress bar."""
         try:
             folder_id = self.get_or_create_folder_path(folder_name, self.root_folder_id)
             if not folder_id:
@@ -177,7 +180,7 @@ class GoogleDriveClient:
                 'name': filename,
                 'parents': [folder_id]
             }
-            
+
             media = MediaFileUpload(
                 local_path,
                 resumable=True
@@ -190,12 +193,33 @@ class GoogleDriveClient:
             for attempt in range(max_retries):
                 try:
                     print(f"    Attempt {attempt + 1} of {max_retries}...")
+
+                    # Get file size for progress bar
+                    import tqdm
+                    file_size = os.path.getsize(local_path)
+                    progress = tqdm.tqdm(
+                        total=file_size,
+                        unit='B',
+                        unit_scale=True,
+                        desc='    Uploading',
+                        dynamic_ncols=True
+                    )
+
                     request = self.service.files().create(
                         body=file_metadata,
                         media_body=media,
                         fields='id'
                     )
-                    self._handle_upload_with_refresh(request)
+
+                    response = None
+                    while response is None:
+                        status, response = request.next_chunk()
+                        if status:
+                            progress.update(int(status.progress() * file_size) - progress.n)
+
+                    progress.update(file_size - progress.n)  # Ensure we reach 100%
+                    progress.close()
+
                     print(f"    {Color.GREEN}Success!{Color.END}")
                     return True
                 except Exception as e:

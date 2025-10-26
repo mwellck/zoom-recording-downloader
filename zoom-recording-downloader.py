@@ -19,6 +19,8 @@ import signal
 import sys as system
 import time
 from datetime import datetime, date, timezone, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 # Installed modules
 import dateutil.parser as parser
@@ -95,6 +97,9 @@ MEETING_STRFTIME = config("Recordings", "strftime", '%Y.%m.%d - %I.%M %p UTC')
 MEETING_FILENAME = config("Recordings", "filename",
                           '{meeting_time} - {topic} - {rec_type} - {recording_id}.{file_extension}')
 MEETING_FOLDER = config("Recordings", "folder", '{topic} - {meeting_time}')
+
+# Parallel processing configuration
+MAX_WORKERS = int(config("Processing", "max_workers", 3))  # Number of parallel downloads/uploads
 
 # Storage configuration
 GDRIVE_ENABLED = False
@@ -350,6 +355,93 @@ def load_completed_meeting_ids():
         )
 
 
+# Create a lock for thread-safe file writing
+completed_log_lock = Lock()
+
+
+def save_completed_meeting_id(recording_id):
+    """Thread-safe function to save completed meeting ID"""
+    with completed_log_lock:
+        with open(COMPLETED_MEETING_IDS_LOG, "a") as fd:
+            fd.write(f"{recording_id}\n")
+        COMPLETED_MEETING_IDS.add(recording_id)
+
+
+def process_recording(recording, index, total_count, email, storage_service):
+    """Process a single recording (download and optionally upload)"""
+    try:
+        recording_id = recording["uuid"]
+
+        if recording_id in COMPLETED_MEETING_IDS:
+            print(f"\n==> [{index + 1}/{total_count}] Skipping already downloaded recording")
+            return True
+
+        try:
+            downloads = get_downloads(recording)
+        except Exception as e:
+            print(
+                f"{Color.RED}### [{index + 1}/{total_count}] Failed to get download URLs: {str(e)}{Color.END}"
+            )
+            return False
+
+        print(f"\n==> [{index + 1}/{total_count}] Processing recording")
+
+        all_files_success = True
+        for file_type, file_extension, download_url, recording_type, rec_id in downloads:
+            try:
+                params = {
+                    "file_extension": file_extension,
+                    "recording": recording,
+                    "recording_id": rec_id,
+                    "recording_type": recording_type
+                }
+                filename, folder_name = format_filename(params)
+
+                print(f"    > [{index + 1}/{total_count}] Downloading {filename}")
+                sanitized_download_dir = path_validate.sanitize_filepath(
+                    os.sep.join([DOWNLOAD_DIRECTORY, folder_name])
+                )
+                sanitized_filename = path_validate.sanitize_filename(filename)
+                full_filename = os.sep.join([sanitized_download_dir, sanitized_filename])
+
+                if download_recording(download_url, email, filename, folder_name):
+                    # Upload to cloud storage if enabled
+                    upload_success = False
+
+                    if GDRIVE_ENABLED and storage_service:
+                        print(f"    > [{index + 1}/{total_count}] Uploading to Google Drive...")
+                        upload_success = storage_service.upload_file(full_filename, folder_name, sanitized_filename)
+                    elif S3_ENABLED and storage_service:
+                        print(f"    > [{index + 1}/{total_count}] Uploading to S3/Spaces...")
+                        upload_success = storage_service.upload_file(full_filename, folder_name, sanitized_filename)
+
+                    # Clean up local file if upload was successful
+                    if upload_success and os.path.exists(full_filename):
+                        os.remove(full_filename)
+                        if os.path.exists(sanitized_download_dir) and not os.listdir(sanitized_download_dir):
+                            os.rmdir(sanitized_download_dir)
+                else:
+                    all_files_success = False
+
+            except Exception as e:
+                print(
+                    f"{Color.RED}### [{index + 1}/{total_count}] Failed to process file {file_type}: "
+                    f"{str(e)}{Color.END}"
+                )
+                all_files_success = False
+                continue
+
+        # Only mark as complete if all files were processed successfully
+        if all_files_success:
+            save_completed_meeting_id(recording_id)
+            return True
+        return False
+
+    except Exception as e:
+        print(f"{Color.RED}### [{index + 1}/{total_count}] Unexpected error: {str(e)}{Color.END}")
+        return False
+
+
 def handle_graceful_shutdown(signal_received, frame):
     print(f"\n{Color.DARK_CYAN}SIGINT or CTRL-C detected. Exiting gracefully.{Color.END}")
 
@@ -428,72 +520,48 @@ def main():
         total_count = len(recordings)
         print(f"==> Found {total_count} recordings")
 
-        for index, recording in enumerate(recordings):
-            try:
-                recording_id = recording["uuid"]
+        if total_count == 0:
+            continue
 
-                if recording_id in COMPLETED_MEETING_IDS:
-                    print(
-                        f"\n==> Skipping already downloaded recording {index + 1} of {total_count}"
-                    )
-                    continue
+        # Process recordings in parallel
+        print(f"\n{Color.BOLD}Processing up to {MAX_WORKERS} recordings in parallel...{Color.END}\n")
 
-                downloads = get_downloads(recording)
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            # Submit all recording processing tasks
+            future_to_recording = {
+                executor.submit(
+                    process_recording,
+                    recording,
+                    index,
+                    total_count,
+                    email,
+                    storage_service
+                ): (recording, index)
+                for index, recording in enumerate(recordings)
+            }
 
-            except Exception as e:
-                print(
-                    f"{Color.RED}### Failed to get download URLs for recording {index + 1} "
-                    f"of {total_count} due to error: {str(e)}{Color.END}"
-                )
-                continue
+            # Track completion
+            completed = 0
+            failed = 0
 
-            print(f"\n==> Processing recording {index + 1} of {total_count}")
-
-            for file_type, file_extension, download_url, recording_type, recording_id in downloads:
+            # Process completed tasks as they finish
+            for future in as_completed(future_to_recording):
+                recording, index = future_to_recording[future]
                 try:
-                    params = {
-                        "file_extension": file_extension,
-                        "recording": recording,
-                        "recording_id": recording_id,
-                        "recording_type": recording_type
-                    }
-                    filename, folder_name = format_filename(params)
-
-                    print(f"    > Downloading {filename}")
-                    sanitized_download_dir = path_validate.sanitize_filepath(
-                        os.sep.join([DOWNLOAD_DIRECTORY, folder_name])
-                    )
-                    sanitized_filename = path_validate.sanitize_filename(filename)
-                    full_filename = os.sep.join([sanitized_download_dir, sanitized_filename])
-
-                    if download_recording(download_url, email, filename, folder_name):
-                        # Upload to cloud storage if enabled
-                        upload_success = False
-
-                        if GDRIVE_ENABLED and storage_service:
-                            print(f"    > Uploading to Google Drive...")
-                            upload_success = storage_service.upload_file(full_filename, folder_name, sanitized_filename)
-                        elif S3_ENABLED and storage_service:
-                            print(f"    > Uploading to S3...")
-                            upload_success = storage_service.upload_file(full_filename, folder_name, sanitized_filename)
-
-                        # Clean up local file if upload was successful
-                        if upload_success and os.path.exists(full_filename):
-                            os.remove(full_filename)
-                            if os.path.exists(sanitized_download_dir) and not os.listdir(sanitized_download_dir):
-                                os.rmdir(sanitized_download_dir)
-
+                    success = future.result()
+                    if success:
+                        completed += 1
+                    else:
+                        failed += 1
                 except Exception as e:
-                    print(
-                        f"{Color.RED}### Failed to process file {file_type} "
-                        f"for recording {index + 1} of {total_count} due to error: "
-                        f"{str(e)}{Color.END}"
-                    )
-                    continue
+                    print(f"{Color.RED}### Recording processing exception: {str(e)}{Color.END}")
+                    failed += 1
 
-            with open(COMPLETED_MEETING_IDS_LOG, "a") as fd:
-                fd.write(f"{recording_id}\n")
-                COMPLETED_MEETING_IDS.add(recording_id)
+        # Summary for this user
+        print(f"\n{Color.BOLD}Summary for {userInfo}:{Color.END}")
+        print(f"  ✓ Completed: {completed}")
+        print(f"  ✗ Failed: {failed}")
+        print(f"  Total: {total_count}")
 
 
 if __name__ == "__main__":

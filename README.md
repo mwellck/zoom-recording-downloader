@@ -124,6 +124,37 @@ For the previous formats you can use the following values
   - **{rec_type}** is the type of the recording
   - **{topic}** is the title of the zoom meeting
 
+## Parallel Processing (Optional) ##
+
+To speed up processing of multiple recordings, you can enable parallel processing:
+
+```json
+{
+    "Processing": {
+        "max_workers": 3
+    }
+}
+```
+
+**max_workers** determines how many recordings are processed simultaneously:
+- `1` = Sequential processing (original behavior)
+- `2-3` = Recommended for most users (2-3x faster)
+- `4-5` = For fast internet connections
+- `6-10` = Advanced users only
+
+**Benefits:**
+- ✅ Process multiple recordings at once
+- ✅ Better bandwidth utilization
+- ✅ 2-3x faster for large batches
+- ✅ Upload progress bars for all cloud storage options
+
+**Requirements:**
+- Adequate disk space: `max_workers × largest_recording_size`
+- Sufficient bandwidth: Faster internet = more workers
+- Available RAM: ~1-2 GB per worker
+
+See [PARALLEL_PROCESSING.md](PARALLEL_PROCESSING.md) for detailed tuning guide.
+
 ## Google Drive Setup (Optional) ##
 
 To enable Google Drive upload support:
@@ -322,11 +353,13 @@ When prompted, choose your preferred storage method:
 
 All cloud storage options include:
 - ✅ Automatic retry logic for failed uploads
+- ✅ **Real-time upload progress bars** with speed and time estimates
 - ✅ Configurable retry attempts and delays
 - ✅ Failed upload logging for troubleshooting
 - ✅ Timestamped root folders to organize different download runs
 - ✅ Automatic local file cleanup after successful upload
 - ✅ Organized folder structure matching your configuration
+- ✅ **Parallel processing support** for faster batch operations
 
 ## Troubleshooting ##
 

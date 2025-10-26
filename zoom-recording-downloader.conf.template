@@ -5,6 +5,11 @@
         "client_secret": "<CLIENT_SECRET>"
     },
     "_comment": "everything after this is optional",
+    "Processing": {
+        "_comment": "Parallel processing configuration",
+        "max_workers": 3,
+        "_max_workers_comment": "Number of recordings to process simultaneously (1-10). Higher = faster but more bandwidth/memory"
+    },
     "Storage": {
         "completed_log": "completed-downloads.log",
         "download_dir": "downloads"

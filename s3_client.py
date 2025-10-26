@@ -104,7 +104,7 @@ class S3Client:
             return f"{folder_name}/{filename}"
 
     def upload_file(self, local_path, folder_name, filename):
-        """Upload file to S3 with retry logic."""
+        """Upload file to S3 with retry logic and progress bar."""
         try:
             s3_key = self._build_s3_key(folder_name, filename)
 
@@ -119,14 +119,30 @@ class S3Client:
                     # Get file size for progress indication
                     file_size = os.path.getsize(local_path)
 
-                    # Upload file
+                    # Create progress bar
+                    import tqdm
+                    progress = tqdm.tqdm(
+                        total=file_size,
+                        unit='B',
+                        unit_scale=True,
+                        desc='    Uploading',
+                        dynamic_ncols=True
+                    )
+
+                    # Callback to update progress
+                    def upload_progress(bytes_transferred):
+                        progress.update(bytes_transferred)
+
+                    # Upload file with progress callback
                     self.s3_client.upload_file(
                         local_path,
                         self.bucket_name,
                         s3_key,
-                        ExtraArgs={'StorageClass': self.config.get('storage_class', 'STANDARD')}
+                        ExtraArgs={'StorageClass': self.config.get('storage_class', 'STANDARD')},
+                        Callback=upload_progress
                     )
 
+                    progress.close()
                     print(f"    {Color.GREEN}Success! Uploaded to s3://{self.bucket_name}/{s3_key}{Color.END}")
                     return True
 
