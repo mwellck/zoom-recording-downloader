@@ -109,7 +109,7 @@ class S3Client:
         else:
             return f"{folder_name}/{filename}"
 
-    def upload_file(self, local_path, folder_name, filename):
+    def upload_file(self, local_path, folder_name, filename, worker_id=0):
         """Upload file to S3 with retry logic and progress bar."""
         try:
             s3_key = self._build_s3_key(folder_name, filename)
@@ -125,14 +125,16 @@ class S3Client:
                     # Get file size for progress indication
                     file_size = os.path.getsize(local_path)
 
-                    # Create progress bar
+                    # Create progress bar with position to avoid overlap
                     import tqdm
                     progress = tqdm.tqdm(
                         total=file_size,
                         unit='B',
                         unit_scale=True,
-                        desc='    Uploading',
-                        dynamic_ncols=True
+                        desc=f'    Upload [{worker_id}]',
+                        dynamic_ncols=True,
+                        position=worker_id,
+                        leave=False  # Remove progress bar after completion
                     )
 
                     # Callback to update progress

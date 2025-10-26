@@ -310,7 +310,7 @@ def list_recordings(email):
     return recordings
 
 
-def download_recording(download_url, email, filename, folder_name):
+def download_recording(download_url, email, filename, folder_name, worker_id=0):
     dl_dir = os.sep.join([DOWNLOAD_DIRECTORY, folder_name])
     sanitized_download_dir = path_validate.sanitize_filepath(dl_dir)
     sanitized_filename = path_validate.sanitize_filename(filename)
@@ -324,8 +324,16 @@ def download_recording(download_url, email, filename, folder_name):
     total_size = int(response.headers.get("content-length", 0))
     block_size = 32 * 1024  # 32 Kibibytes
 
-    # create TQDM progress bar
-    prog_bar = progress_bar.tqdm(dynamic_ncols=True, total=total_size, unit="iB", unit_scale=True)
+    # create TQDM progress bar with position
+    prog_bar = progress_bar.tqdm(
+        dynamic_ncols=True,
+        total=total_size,
+        unit="iB",
+        unit_scale=True,
+        desc=f'    Download [{worker_id}]',
+        position=worker_id,
+        leave=False  # Remove progress bar after completion
+    )
     try:
         with open(full_filename, "wb") as fd:
             for chunk in response.iter_content(block_size):
@@ -375,7 +383,7 @@ def save_completed_meeting_id(recording_id):
         COMPLETED_MEETING_IDS.add(recording_id)
 
 
-def process_recording(recording, index, total_count, email, storage_service):
+def process_recording(recording, index, total_count, email, storage_service, worker_id=0):
     """Process a single recording (download and optionally upload)"""
     try:
         recording_id = recording["uuid"]
@@ -412,16 +420,18 @@ def process_recording(recording, index, total_count, email, storage_service):
                 sanitized_filename = path_validate.sanitize_filename(filename)
                 full_filename = os.sep.join([sanitized_download_dir, sanitized_filename])
 
-                if download_recording(download_url, email, filename, folder_name):
+                if download_recording(download_url, email, filename, folder_name, worker_id):
                     # Upload to cloud storage if enabled
                     upload_success = False
 
                     if GDRIVE_ENABLED and storage_service:
                         print(f"    > [{index + 1}/{total_count}] Uploading to Google Drive...")
-                        upload_success = storage_service.upload_file(full_filename, folder_name, sanitized_filename)
+                        upload_success = storage_service.upload_file(full_filename, folder_name, sanitized_filename,
+                                                                     worker_id)
                     elif S3_ENABLED and storage_service:
                         print(f"    > [{index + 1}/{total_count}] Uploading to S3/Spaces...")
-                        upload_success = storage_service.upload_file(full_filename, folder_name, sanitized_filename)
+                        upload_success = storage_service.upload_file(full_filename, folder_name, sanitized_filename,
+                                                                     worker_id)
 
                     # Clean up local file if upload was successful
                     if upload_success and os.path.exists(full_filename):
@@ -535,18 +545,21 @@ def main():
         print(f"\n{Color.BOLD}Processing up to {MAX_WORKERS} recordings in parallel...{Color.END}\n")
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            # Submit all recording processing tasks
-            future_to_recording = {
-                executor.submit(
+            # Submit all recording processing tasks with worker IDs
+            future_to_recording = {}
+            for index, recording in enumerate(recordings):
+                # Assign worker_id based on index modulo max_workers
+                worker_id = index % MAX_WORKERS
+                future = executor.submit(
                     process_recording,
                     recording,
                     index,
                     total_count,
                     email,
-                    storage_service
-                ): (recording, index)
-                for index, recording in enumerate(recordings)
-            }
+                    storage_service,
+                    worker_id
+                )
+                future_to_recording[future] = (recording, index)
 
             # Track completion
             completed = 0

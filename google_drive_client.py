@@ -169,7 +169,7 @@ class GoogleDriveClient:
 
         return current_parent
 
-    def upload_file(self, local_path, folder_name, filename):
+    def upload_file(self, local_path, folder_name, filename, worker_id=0):
         """Upload file to Google Drive with retry logic and progress bar."""
         try:
             folder_id = self.get_or_create_folder_path(folder_name, self.root_folder_id)
@@ -201,8 +201,10 @@ class GoogleDriveClient:
                         total=file_size,
                         unit='B',
                         unit_scale=True,
-                        desc='    Uploading',
-                        dynamic_ncols=True
+                        desc=f'    Upload [{worker_id}]',
+                        dynamic_ncols=True,
+                        position=worker_id,
+                        leave=False  # Remove progress bar after completion
                     )
 
                     request = self.service.files().create(
