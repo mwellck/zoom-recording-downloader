@@ -82,21 +82,36 @@ APP_VERSION = "3.2 (Google Drive, S3 & DigitalOcean Spaces Edition)"
 
 API_ENDPOINT_USER_LIST = "https://api.zoom.us/v2/users"
 
-RECORDING_START_YEAR = config("Recordings", "start_year", date.today().year)
-RECORDING_START_MONTH = config("Recordings", "start_month", 1)
-RECORDING_START_DAY = config("Recordings", "start_day", 1)
-RECORDING_START_DATE = parser.parse(config("Recordings", "start_date",
-                                           f"{RECORDING_START_YEAR}-{RECORDING_START_MONTH}-{RECORDING_START_DAY}")).replace(
-    tzinfo=timezone.utc)
-RECORDING_END_DATE = parser.parse(config("Recordings", "end_date", str(date.today()))).replace(tzinfo=timezone.utc)
+RECORDING_START_DATE = None
+RECORDING_END_DATE = None
+
+# Parse dates from config
+start_date_str = config("Recordings", "start_date", "")
+end_date_str = config("Recordings", "end_date", "")
+
+if start_date_str:
+    RECORDING_START_DATE = parser.parse(start_date_str).replace(tzinfo=timezone.utc).date()
+else:
+    # Default to 30 days ago if not specified
+    RECORDING_START_DATE = (date.today() - timedelta(days=30))
+
+if end_date_str:
+    RECORDING_END_DATE = parser.parse(end_date_str).replace(tzinfo=timezone.utc).date()
+else:
+    # Default to today
+    RECORDING_END_DATE = date.today()
 DOWNLOAD_DIRECTORY = config("Storage", "download_dir", 'downloads')
 COMPLETED_MEETING_IDS_LOG = config("Storage", "completed_log", 'completed-downloads.log')
 COMPLETED_MEETING_IDS = set()
 USE_COMPLETED_LOG = config("Storage", "use_completed_log", True)
+LAST_RUN_LOG = config("Storage", "last_run_log", "last-run.log")
 
 # Zoom deletion configuration
 DELETE_FROM_ZOOM = config("Zoom", "delete_after_download", False)
 INCLUDE_INACTIVE_USERS = config("Zoom", "include_inactive_users", False)
+
+# Auto date range configuration
+AUTO_DATE_RANGE = config("Recordings", "auto_date_range", False)
 
 MEETING_TIMEZONE = ZoneInfo(config("Recordings", "timezone", 'UTC'))
 MEETING_STRFTIME = config("Recordings", "strftime", '%Y.%m.%d - %I.%M %p UTC')
@@ -393,6 +408,68 @@ def load_completed_meeting_ids():
         )
 
 
+def get_last_run_time():
+    """Get the timestamp of the last successful run"""
+    try:
+        with open(LAST_RUN_LOG, 'r') as fd:
+            last_run_str = fd.read().strip()
+            if last_run_str:
+                # Parse ISO format timestamp
+                last_run = datetime.fromisoformat(last_run_str)
+                return last_run
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        print(f"{Color.YELLOW}⚠ Could not read last run time: {e}{Color.END}")
+        return None
+    return None
+
+
+def save_last_run_time():
+    """Save the current timestamp as the last run time"""
+    try:
+        current_time = datetime.now().isoformat()
+        with open(LAST_RUN_LOG, 'w') as fd:
+            fd.write(current_time)
+        print(f"{Color.GREEN}✓ Saved run time: {current_time}{Color.END}")
+    except Exception as e:
+        print(f"{Color.YELLOW}⚠ Could not save last run time: {e}{Color.END}")
+
+
+def calculate_auto_date_range():
+    """Calculate start_date based on last run time, or use config values"""
+    global RECORDING_START_DATE, RECORDING_END_DATE
+
+    if not AUTO_DATE_RANGE:
+        # Use configured dates
+        return
+
+    last_run = get_last_run_time()
+
+    if last_run:
+        # Use last run time as start date
+        RECORDING_START_DATE = last_run.date()
+        RECORDING_END_DATE = date.today()
+
+        print(f"{Color.CYAN}📅 Auto date range enabled:{Color.END}")
+        print(f"   Last run: {last_run.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"   Fetching recordings from {RECORDING_START_DATE} to {RECORDING_END_DATE}")
+        print(f"   ({(RECORDING_END_DATE - RECORDING_START_DATE).days} days)\n")
+    else:
+        # First run - use configured start_date or default to 30 days ago
+        if RECORDING_START_DATE:
+            print(f"{Color.CYAN}📅 First run with auto date range:{Color.END}")
+            print(f"   Using configured start_date: {RECORDING_START_DATE}")
+            print(f"   Future runs will fetch from last run time\n")
+        else:
+            # Default to last 30 days for first run
+            RECORDING_START_DATE = date.today() - timedelta(days=30)
+            RECORDING_END_DATE = date.today()
+            print(f"{Color.CYAN}📅 First run with auto date range:{Color.END}")
+            print(f"   No start_date configured, using last 30 days")
+            print(f"   Fetching recordings from {RECORDING_START_DATE} to {RECORDING_END_DATE}\n")
+
+
 # Create a lock for thread-safe file writing
 completed_log_lock = Lock()
 
@@ -583,6 +660,9 @@ def main():
     load_access_token()
     load_completed_meeting_ids()
 
+    # Calculate automatic date range if enabled
+    calculate_auto_date_range()
+
     print(f"{Color.BOLD}Getting user accounts...{Color.END}")
     users = get_users()
 
@@ -642,6 +722,11 @@ def main():
         print(f"  ✓ Completed: {completed}")
         print(f"  ✗ Failed: {failed}")
         print(f"  Total: {total_count}")
+
+    # Save the current run time for next run (if auto date range is enabled)
+    if AUTO_DATE_RANGE:
+        print()  # Empty line for spacing
+        save_last_run_time()
 
 
 if __name__ == "__main__":

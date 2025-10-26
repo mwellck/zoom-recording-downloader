@@ -245,6 +245,34 @@ Include recordings from deactivated users:
 
 See [INACTIVE_USERS.md](INACTIVE_USERS.md) for complete guide.
 
+## Automatic Date Range / Incremental Sync (Optional) ##
+
+Automatically fetch only new recordings since the last run:
+
+```json
+{
+    "Recordings": {
+        "auto_date_range": false
+    }
+}
+```
+
+- **false** (default): Use manual start_date/end_date
+- **true**: Automatically calculate date range from last run
+
+**Perfect for:**
+- Automated/scheduled downloads (cron jobs)
+- No need to update dates manually
+- Efficient - only fetches new recordings
+- Automatic catch-up after downtime
+
+**How it works:**
+- First run: Uses start_date or defaults to last 30 days
+- Saves timestamp in `last-run.log`
+- Future runs: Automatically fetches from last run time to today
+
+See [AUTO_DATE_RANGE.md](AUTO_DATE_RANGE.md) for complete guide with cron examples.
+
 ## Google Drive Setup (Optional) ##
 
 To enable Google Drive upload support:
