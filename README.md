@@ -199,6 +199,29 @@ Control whether to track already-downloaded recordings:
 
 See [CONFIGURATION_OPTIONS.md](CONFIGURATION_OPTIONS.md) for detailed guide with use cases and cost analysis.
 
+## Automatic Zoom Deletion (Optional) ##
+
+⚠️ **Advanced Feature:** Automatically delete recordings from Zoom after successful backup.
+
+```json
+{
+    "Zoom": {
+        "delete_after_download": false
+    }
+}
+```
+
+- **false** (default): Keep recordings in Zoom (safe)
+- **true**: Delete from Zoom after successful download/upload (frees storage)
+
+**Important:**
+- Requires additional Zoom API scope: `cloud_recording:delete:meeting_recording:admin`
+- Only deletes after successful backup
+- Deletion is permanent (cannot be undone)
+- Useful for freeing Zoom storage or compliance requirements
+
+See [ZOOM_DELETION.md](ZOOM_DELETION.md) for complete guide including safety features, setup instructions, and best practices.
+
 ## Google Drive Setup (Optional) ##
 
 To enable Google Drive upload support:

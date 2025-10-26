@@ -18,6 +18,7 @@ import re as regex
 import signal
 import sys as system
 import time
+import urllib.parse
 from datetime import datetime, date, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
@@ -92,6 +93,9 @@ DOWNLOAD_DIRECTORY = config("Storage", "download_dir", 'downloads')
 COMPLETED_MEETING_IDS_LOG = config("Storage", "completed_log", 'completed-downloads.log')
 COMPLETED_MEETING_IDS = set()
 USE_COMPLETED_LOG = config("Storage", "use_completed_log", True)
+
+# Zoom deletion configuration
+DELETE_FROM_ZOOM = config("Zoom", "delete_after_download", False)
 
 MEETING_TIMEZONE = ZoneInfo(config("Recordings", "timezone", 'UTC'))
 MEETING_STRFTIME = config("Recordings", "strftime", '%Y.%m.%d - %I.%M %p UTC')
@@ -383,6 +387,33 @@ def save_completed_meeting_id(recording_id):
         COMPLETED_MEETING_IDS.add(recording_id)
 
 
+def delete_recording_from_zoom(recording_id):
+    """Delete a recording from Zoom cloud storage"""
+    try:
+        # URL encode the recording ID for the API call
+        import urllib.parse
+        encoded_id = urllib.parse.quote(recording_id, safe='')
+
+        delete_url = f"https://api.zoom.us/v2/recordings/{encoded_id}"
+
+        response = requests.delete(url=delete_url, headers=AUTHORIZATION_HEADER)
+
+        if response.status_code == 204:
+            # 204 No Content means successful deletion
+            print(f"    {Color.GREEN}✓ Deleted from Zoom cloud{Color.END}")
+            return True
+        elif response.status_code == 404:
+            print(f"    {Color.YELLOW}⚠ Recording not found in Zoom (may be already deleted){Color.END}")
+            return True  # Consider this a success since the recording is gone
+        else:
+            print(f"    {Color.RED}✗ Failed to delete from Zoom (Status: {response.status_code}){Color.END}")
+            return False
+
+    except Exception as e:
+        print(f"    {Color.RED}✗ Error deleting from Zoom: {str(e)}{Color.END}")
+        return False
+
+
 def process_recording(recording, index, total_count, email, storage_service, worker_id=0):
     """Process a single recording (download and optionally upload)"""
     try:
@@ -452,6 +483,12 @@ def process_recording(recording, index, total_count, email, storage_service, wor
         # Only mark as complete if all files were processed successfully
         if all_files_success:
             save_completed_meeting_id(recording_id)
+
+            # Delete from Zoom if configured
+            if DELETE_FROM_ZOOM:
+                print(f"    > [{index + 1}/{total_count}] Deleting from Zoom cloud...")
+                delete_recording_from_zoom(recording_id)
+
             return True
         return False
 

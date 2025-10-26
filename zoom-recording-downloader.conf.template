@@ -5,6 +5,11 @@
         "client_secret": "<CLIENT_SECRET>"
     },
     "_comment": "everything after this is optional",
+    "Zoom": {
+        "_comment": "Zoom cloud storage management",
+        "delete_after_download": false,
+        "_delete_after_download_comment": "WARNING: Set to true to automatically delete recordings from Zoom after successful download/upload. This is permanent and cannot be undone!"
+    },
     "Processing": {
         "_comment": "Parallel processing configuration",
         "max_workers": 3,
