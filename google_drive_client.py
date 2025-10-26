@@ -237,8 +237,15 @@ class GoogleDriveClient:
             return False
 
     def initialize_root_folder(self):
-        """Create root folder with timestamp."""
-        timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
-        root_folder_name = f"{self.config.get('root_folder_name', 'zoom-recording-downloader')}-{timestamp}"
-        self.root_folder_id = self.create_folder(root_folder_name)
+        """Create root folder with optional timestamp."""
+        root_folder_name = self.config.get('root_folder_name', 'zoom-recording-downloader')
+        use_timestamp = self.config.get('use_timestamp', False)
+
+        if use_timestamp:
+            timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+            folder_name = f"{root_folder_name}-{timestamp}"
+        else:
+            folder_name = root_folder_name
+
+        self.root_folder_id = self.create_folder(folder_name)
         return self.root_folder_id is not None

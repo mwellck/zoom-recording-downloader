@@ -155,6 +155,50 @@ To speed up processing of multiple recordings, you can enable parallel processin
 
 See [PARALLEL_PROCESSING.md](PARALLEL_PROCESSING.md) for detailed tuning guide.
 
+## Advanced Configuration Options ##
+
+### Root Folder Timestamps
+
+Control whether cloud storage folders include timestamps:
+
+```json
+{
+    "GoogleDrive": {
+        "root_folder_name": "zoom-recordings",
+        "use_timestamp": false
+    },
+    "S3": {
+        "root_folder_name": "zoom-recordings",
+        "use_timestamp": false
+    }
+}
+```
+
+- **false** (default): All recordings in single folder (e.g., `zoom-recordings/`)
+- **true**: Each run creates timestamped folder (e.g., `zoom-recordings-2024-10-26-143022/`)
+
+**Recommendation:** Use `false` to avoid duplicates and save costs.
+
+### Completed Downloads Tracking
+
+Control whether to track already-downloaded recordings:
+
+```json
+{
+    "Storage": {
+        "use_completed_log": true,
+        "completed_log": "completed-downloads.log"
+    }
+}
+```
+
+- **true** (default): Skip already-downloaded recordings (faster, no duplicates)
+- **false**: Process all recordings every time (useful for one-time re-downloads)
+
+**Recommendation:** Use `true` for regular downloads, `false` only for disaster recovery.
+
+See [CONFIGURATION_OPTIONS.md](CONFIGURATION_OPTIONS.md) for detailed guide with use cases and cost analysis.
+
 ## Google Drive Setup (Optional) ##
 
 To enable Google Drive upload support:

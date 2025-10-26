@@ -91,6 +91,7 @@ RECORDING_END_DATE = parser.parse(config("Recordings", "end_date", str(date.toda
 DOWNLOAD_DIRECTORY = config("Storage", "download_dir", 'downloads')
 COMPLETED_MEETING_IDS_LOG = config("Storage", "completed_log", 'completed-downloads.log')
 COMPLETED_MEETING_IDS = set()
+USE_COMPLETED_LOG = config("Storage", "use_completed_log", True)
 
 MEETING_TIMEZONE = ZoneInfo(config("Recordings", "timezone", 'UTC'))
 MEETING_STRFTIME = config("Recordings", "strftime", '%Y.%m.%d - %I.%M %p UTC')
@@ -344,6 +345,10 @@ def download_recording(download_url, email, filename, folder_name):
 
 
 def load_completed_meeting_ids():
+    if not USE_COMPLETED_LOG:
+        print(f"{Color.DARK_CYAN}Completed log disabled. All recordings will be processed.{Color.END}\n")
+        return
+
     try:
         with open(COMPLETED_MEETING_IDS_LOG, 'r') as fd:
             [COMPLETED_MEETING_IDS.add(line.strip()) for line in fd]
@@ -361,6 +366,9 @@ completed_log_lock = Lock()
 
 def save_completed_meeting_id(recording_id):
     """Thread-safe function to save completed meeting ID"""
+    if not USE_COMPLETED_LOG:
+        return
+
     with completed_log_lock:
         with open(COMPLETED_MEETING_IDS_LOG, "a") as fd:
             fd.write(f"{recording_id}\n")
@@ -372,7 +380,7 @@ def process_recording(recording, index, total_count, email, storage_service):
     try:
         recording_id = recording["uuid"]
 
-        if recording_id in COMPLETED_MEETING_IDS:
+        if USE_COMPLETED_LOG and recording_id in COMPLETED_MEETING_IDS:
             print(f"\n==> [{index + 1}/{total_count}] Skipping already downloaded recording")
             return True
 

@@ -86,10 +86,16 @@ class S3Client:
             return False
 
     def initialize_root_folder(self):
-        """Create root folder prefix with timestamp."""
-        timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
-        root_folder_name = f"{self.config.get('root_folder_name', 'zoom-recording-downloader')}-{timestamp}"
-        self.root_prefix = root_folder_name
+        """Create root folder with optional timestamp."""
+        root_folder_name = self.config.get('root_folder_name', 'zoom-recording-downloader')
+        use_timestamp = self.config.get('use_timestamp', False)
+
+        if use_timestamp:
+            timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+            self.root_prefix = f"{root_folder_name}-{timestamp}"
+        else:
+            self.root_prefix = root_folder_name
+
         print(f"{Color.GREEN}S3 root prefix set to: {self.root_prefix}{Color.END}")
         return True
 

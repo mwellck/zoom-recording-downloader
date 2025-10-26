@@ -12,6 +12,8 @@
     },
     "Storage": {
         "completed_log": "completed-downloads.log",
+        "use_completed_log": true,
+        "_use_completed_log_comment": "Set to false to disable completed downloads tracking (will re-download all recordings on each run)",
         "download_dir": "downloads"
     },
     "GoogleDrive": {
@@ -19,6 +21,8 @@
         "client_secrets_file": "client_secrets.json",
         "token_file": "token.json",
         "root_folder_name": "zoom-recording-downloader",
+        "use_timestamp": false,
+        "_use_timestamp_comment": "Set to true to append timestamp to root folder name (e.g., zoom-recording-downloader-2024-10-26-143022)",
         "retry_delay": 5,
         "max_retries": 3,
         "failed_log": "failed-uploads.log"
@@ -32,6 +36,8 @@
         "endpoint_url": "",
         "_endpoint_url_comment": "Leave empty for AWS S3. For DigitalOcean Spaces use: https://<region>.digitaloceanspaces.com (e.g., https://nyc3.digitaloceanspaces.com)",
         "root_folder_name": "zoom-recording-downloader",
+        "use_timestamp": false,
+        "_use_timestamp_comment": "Set to true to append timestamp to root folder name (e.g., zoom-recording-downloader-2024-10-26-143022)",
         "storage_class": "STANDARD",
         "_storage_class_comment": "Options: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE",
         "retry_delay": 5,
