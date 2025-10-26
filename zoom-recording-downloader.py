@@ -96,6 +96,7 @@ USE_COMPLETED_LOG = config("Storage", "use_completed_log", True)
 
 # Zoom deletion configuration
 DELETE_FROM_ZOOM = config("Zoom", "delete_after_download", False)
+INCLUDE_INACTIVE_USERS = config("Zoom", "include_inactive_users", False)
 
 MEETING_TIMEZONE = ZoneInfo(config("Recordings", "timezone", 'UTC'))
 MEETING_STRFTIME = config("Recordings", "strftime", '%Y.%m.%d - %I.%M %p UTC')
@@ -193,37 +194,57 @@ def load_access_token():
 
 
 def get_users():
-    """ loop through pages and return all users """
-    response = requests.get(url=API_ENDPOINT_USER_LIST, headers=AUTHORIZATION_HEADER)
-
-    if not response.ok:
-        print(response)
-        print(
-            f"{Color.RED}### Could not retrieve users. Please make sure that your access "
-            f"token is still valid{Color.END}"
-        )
-
-        system.exit(1)
-
-    page_data = response.json()
-    total_pages = int(page_data["page_count"]) + 1
+    """ loop through pages and return all users (active and optionally inactive) """
+    # Determine which user statuses to fetch
+    if INCLUDE_INACTIVE_USERS:
+        # Fetch both active and inactive users
+        statuses = ['active', 'inactive']
+        print(f"{Color.CYAN}Fetching both active and inactive users...{Color.END}")
+    else:
+        # Only fetch active users (default)
+        statuses = ['active']
+        print(f"{Color.CYAN}Fetching active users only...{Color.END}")
 
     all_users = []
 
-    for page in range(1, total_pages):
-        url = f"{API_ENDPOINT_USER_LIST}?page_number={str(page)}"
-        user_data = requests.get(url=url, headers=AUTHORIZATION_HEADER).json()
-        users = ([
-            (
-                user["email"],
-                user["id"],
-                user.get("first_name", ""),  # Use .get() with a default value
-                user.get("last_name", "")  # Use .get() with a default value
-            )
-            for user in user_data["users"]
-        ])
+    for status in statuses:
+        response = requests.get(
+            url=f"{API_ENDPOINT_USER_LIST}?status={status}",
+            headers=AUTHORIZATION_HEADER
+        )
 
-        all_users.extend(users)
+        if not response.ok:
+            print(response)
+            print(
+                f"{Color.RED}### Could not retrieve {status} users. Please make sure that your access "
+                f"token is still valid{Color.END}"
+            )
+            continue  # Continue with other statuses instead of exiting
+
+        page_data = response.json()
+        total_pages = int(page_data["page_count"]) + 1
+
+        for page in range(1, total_pages):
+            url = f"{API_ENDPOINT_USER_LIST}?status={status}&page_number={str(page)}"
+            user_data = requests.get(url=url, headers=AUTHORIZATION_HEADER).json()
+            users = ([
+                (
+                    user["email"],
+                    user["id"],
+                    user.get("first_name", ""),
+                    user.get("last_name", ""),
+                    user.get("status", status)  # Include status
+                )
+                for user in user_data["users"]
+            ])
+
+            all_users.extend(users)
+
+        print(f"{Color.GREEN}Found {len([u for u in all_users if u[4] == status])} {status} users{Color.END}")
+
+    if not all_users:
+        print(f"{Color.RED}### No users found!{Color.END}")
+        system.exit(1)
 
     return all_users
 
@@ -565,11 +586,12 @@ def main():
     print(f"{Color.BOLD}Getting user accounts...{Color.END}")
     users = get_users()
 
-    for email, user_id, first_name, last_name in users:
+    for email, user_id, first_name, last_name, status in users:
         userInfo = (
             f"{first_name} {last_name} - {email}" if first_name and last_name else f"{email}"
         )
-        print(f"\n{Color.BOLD}Getting recording list for {userInfo}{Color.END}")
+        status_indicator = f"[{status.upper()}]" if status != "active" else ""
+        print(f"\n{Color.BOLD}Getting recording list for {userInfo} {status_indicator}{Color.END}")
 
         recordings = list_recordings(user_id)
         total_count = len(recordings)

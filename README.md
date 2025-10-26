@@ -222,6 +222,29 @@ See [CONFIGURATION_OPTIONS.md](CONFIGURATION_OPTIONS.md) for detailed guide with
 
 See [ZOOM_DELETION.md](ZOOM_DELETION.md) for complete guide including safety features, setup instructions, and best practices.
 
+## Inactive/Deactivated Users (Optional) ##
+
+Include recordings from deactivated users:
+
+```json
+{
+    "Zoom": {
+        "include_inactive_users": false
+    }
+}
+```
+
+- **false** (default): Only process active users
+- **true**: Include inactive/deactivated users
+
+**Use cases:**
+- Archive recordings from former employees
+- Compliance/legal requirements
+- Historical backup before account deletion
+- Free storage by archiving and deleting inactive user recordings
+
+See [INACTIVE_USERS.md](INACTIVE_USERS.md) for complete guide.
+
 ## Google Drive Setup (Optional) ##
 
 To enable Google Drive upload support:

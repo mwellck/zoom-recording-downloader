@@ -8,7 +8,9 @@
     "Zoom": {
         "_comment": "Zoom cloud storage management",
         "delete_after_download": false,
-        "_delete_after_download_comment": "WARNING: Set to true to automatically delete recordings from Zoom after successful download/upload. This is permanent and cannot be undone!"
+        "_delete_after_download_comment": "WARNING: Set to true to automatically delete recordings from Zoom after successful download/upload. This is permanent and cannot be undone!",
+        "include_inactive_users": false,
+        "_include_inactive_users_comment": "Set to true to include recordings from inactive/deactivated users. Useful for archiving recordings from former employees."
     },
     "Processing": {
         "_comment": "Parallel processing configuration",
