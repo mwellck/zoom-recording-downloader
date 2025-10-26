@@ -492,7 +492,7 @@ def delete_recording_from_zoom(recording_id):
         import urllib.parse
         encoded_id = urllib.parse.quote(recording_id, safe='')
 
-        delete_url = f"https://api.zoom.us/v2/recordings/{encoded_id}"
+        delete_url = f"https://api.zoom.us/v2/meetings/{encoded_id}/recordings"
 
         response = requests.delete(url=delete_url, headers=AUTHORIZATION_HEADER)
 
