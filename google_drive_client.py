@@ -170,16 +170,37 @@ class GoogleDriveClient:
         return current_parent
 
     def upload_file(self, local_path, folder_name, filename, worker_id=0):
-        """Upload file to Google Drive with retry logic and progress bar."""
+        """Upload file to Google Drive with retry logic and progress bar. Overwrites if exists."""
         try:
             folder_id = self.get_or_create_folder_path(folder_name, self.root_folder_id)
             if not folder_id:
                 return False
 
+            # Check if file already exists in this folder
+            existing_file_id = None
+            try:
+                query = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
+                results = self._handle_upload_with_refresh(
+                    self.service.files().list(
+                        q=query,
+                        spaces='drive',
+                        fields='files(id, name)'
+                    )
+                )
+
+                if results.get('files'):
+                    existing_file_id = results['files'][0]['id']
+                    print(f"    {Color.YELLOW}File exists, will overwrite...{Color.END}")
+            except Exception as e:
+                print(f"    {Color.YELLOW}⚠ Could not check for existing file: {e}{Color.END}")
+
             file_metadata = {
-                'name': filename,
-                'parents': [folder_id]
+                'name': filename
             }
+
+            # Only set parents for new files (create), not for updates
+            if not existing_file_id:
+                file_metadata['parents'] = [folder_id]
 
             media = MediaFileUpload(
                 local_path,
@@ -207,11 +228,20 @@ class GoogleDriveClient:
                         leave=False  # Remove progress bar after completion
                     )
 
-                    request = self.service.files().create(
-                        body=file_metadata,
-                        media_body=media,
-                        fields='id'
-                    )
+                    # Use update if file exists, create if new
+                    if existing_file_id:
+                        request = self.service.files().update(
+                            fileId=existing_file_id,
+                            body=file_metadata,
+                            media_body=media,
+                            fields='id'
+                        )
+                    else:
+                        request = self.service.files().create(
+                            body=file_metadata,
+                            media_body=media,
+                            fields='id'
+                        )
 
                     response = None
                     while response is None:
@@ -222,7 +252,10 @@ class GoogleDriveClient:
                     progress.update(file_size - progress.n)  # Ensure we reach 100%
                     progress.close()
 
-                    print(f"    {Color.GREEN}Success!{Color.END}")
+                    if existing_file_id:
+                        print(f"    {Color.GREEN}Success! (Overwritten){Color.END}")
+                    else:
+                        print(f"    {Color.GREEN}Success!{Color.END}")
                     return True
                 except Exception as e:
                     if attempt < max_retries - 1:
@@ -251,3 +284,43 @@ class GoogleDriveClient:
 
         self.root_folder_id = self.create_folder(folder_name)
         return self.root_folder_id is not None
+
+    def verify_file_size(self, folder_name, filename, expected_size):
+        """Verify uploaded file size matches expected size."""
+        try:
+            folder_id = self.get_or_create_folder_path(folder_name, self.root_folder_id)
+            if not folder_id:
+                return {"status": "error", "message": "Folder not found"}
+
+            query = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
+            results = self._handle_upload_with_refresh(
+                self.service.files().list(
+                    q=query,
+                    spaces='drive',
+                    fields='files(id, name, size)'
+                )
+            )
+
+            if not results.get('files'):
+                return {"status": "missing", "message": "File not found in Google Drive"}
+
+            file_info = results['files'][0]
+            actual_size = int(file_info.get('size', 0))
+
+            if actual_size == expected_size:
+                return {
+                    "status": "verified",
+                    "expected": expected_size,
+                    "actual": actual_size,
+                    "file_id": file_info['id']
+                }
+            else:
+                return {
+                    "status": "mismatch",
+                    "expected": expected_size,
+                    "actual": actual_size,
+                    "file_id": file_info['id']
+                }
+
+        except Exception as e:
+            return {"status": "error", "message": str(e)}

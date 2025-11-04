@@ -64,5 +64,18 @@
         "strftime": "%Y.%m.%d-%H.%M%z",
         "filename": "{meeting_time}-{topic}-{rec_type}-{recording_id}.{file_extension}",
         "folder": "{year}/{month}/{meeting_time}-{topic}"
+    },
+    "Verification": {
+        "_comment": "Optional: File verification and corruption detection",
+        "verify_on_download": true,
+        "_verify_on_download_comment": "Verify file size immediately after download (recommended)",
+        "verify_on_upload": true,
+        "_verify_on_upload_comment": "Verify file size after cloud upload (recommended for data integrity)",
+        "retry_on_mismatch": true,
+        "_retry_on_mismatch_comment": "Automatically retry download if size mismatch detected",
+        "max_verification_retries": 3,
+        "_max_verification_retries_comment": "Maximum number of retry attempts for failed verifications",
+        "verification_log": "verification-log.json",
+        "_verification_log_comment": "Detailed verification log with file-level information. Set to empty string to disable."
     }
 }

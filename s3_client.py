@@ -198,3 +198,36 @@ class S3Client:
         except Exception as e:
             print(f"{Color.RED}Failed to list files: {str(e)}{Color.END}")
             return []
+
+    def verify_file_size(self, folder_name, filename, expected_size):
+        """Verify uploaded object size matches expected size."""
+        s3_key = self._build_s3_key(folder_name, filename)
+
+        try:
+            response = self.s3_client.head_object(
+                Bucket=self.bucket_name,
+                Key=s3_key
+            )
+            actual_size = response['ContentLength']
+
+            if actual_size == expected_size:
+                return {
+                    "status": "verified",
+                    "expected": expected_size,
+                    "actual": actual_size,
+                    "etag": response['ETag']
+                }
+            else:
+                return {
+                    "status": "mismatch",
+                    "expected": expected_size,
+                    "actual": actual_size,
+                    "etag": response['ETag']
+                }
+
+        except ClientError as e:
+            if e.response['Error']['Code'] == '404':
+                return {"status": "missing", "message": "Object not found in S3/Spaces"}
+            return {"status": "error", "message": str(e)}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
