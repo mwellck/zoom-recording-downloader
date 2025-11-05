@@ -488,7 +488,7 @@ def save_completed_meeting_id(recording_id):
 
 
 def delete_recording_from_zoom(recording_id):
-    """Delete a recording from Zoom cloud storage"""
+    """Delete a recording from Zoom cloud storage. Returns (success, status_code)."""
     try:
         # URL encode the recording ID for the API call
         import urllib.parse
@@ -501,17 +501,20 @@ def delete_recording_from_zoom(recording_id):
         if response.status_code == 204:
             # 204 No Content means successful deletion
             print(f"    {Color.GREEN}✓ Deleted from Zoom cloud{Color.END}")
-            return True
+            return (True, 204)
         elif response.status_code == 404:
             print(f"    {Color.YELLOW}⚠ Recording not found in Zoom (may be already deleted){Color.END}")
-            return True  # Consider this a success since the recording is gone
+            return (True, 404)  # Consider this a success since the recording is gone
+        elif response.status_code == 401:
+            print(f"    {Color.YELLOW}⚠ Authentication failed (token may have expired){Color.END}")
+            return (False, 401)
         else:
             print(f"    {Color.RED}✗ Failed to delete from Zoom (Status: {response.status_code}){Color.END}")
-            return False
+            return (False, response.status_code)
 
     except Exception as e:
         print(f"    {Color.RED}✗ Error deleting from Zoom: {str(e)}{Color.END}")
-        return False
+        return (False, 0)
 
 
 def verify_local_file_size(full_filename, expected_size):
@@ -723,7 +726,7 @@ def process_recording(recording, index, total_count, email, storage_service, wor
             # Delete from Zoom if configured
             if DELETE_FROM_ZOOM:
                 print(f"    > [{index + 1}/{total_count}] Deleting from Zoom cloud...")
-                delete_recording_from_zoom(recording_id)
+                success, _ = delete_recording_from_zoom(recording_id)
 
             return True
         return False
@@ -1038,6 +1041,8 @@ def auto_fix_corrupted_recordings(verification_results):
 
 def delete_verified_recordings(fully_verified_recordings):
     """Delete fully verified recordings from Zoom to free up cloud storage."""
+    pending_deletions_log = "pending-deletions.log"
+
     if not fully_verified_recordings:
         print(f"{Color.YELLOW}No fully verified recordings to delete.{Color.END}")
         return
@@ -1068,18 +1073,61 @@ def delete_verified_recordings(fully_verified_recordings):
         print(f"{Color.YELLOW}Deletion cancelled.{Color.END}")
         return
 
+    # Save all UUIDs to pending deletions log before starting
+    pending_uuids = {uuid for uuid, _ in fully_verified_recordings}
+    try:
+        with open(pending_deletions_log, 'w') as fd:
+            for uuid in pending_uuids:
+                fd.write(f"{uuid}\n")
+        print(f"{Color.DARK_CYAN}Saved {len(pending_uuids)} recording(s) to {pending_deletions_log}{Color.END}\n")
+    except Exception as e:
+        print(f"{Color.RED}Error saving pending deletions log: {str(e)}{Color.END}")
+        return
+
     # Delete recordings
     print(f"\n{Color.BOLD}Deleting recordings from Zoom...{Color.END}\n")
     successful_deletions = []
     failed_deletions = []
+    token_expired = False
 
     for idx, (uuid, recording_data) in enumerate(fully_verified_recordings, 1):
         topic = recording_data.get('topic', 'N/A')
         print(f"[{idx}/{len(fully_verified_recordings)}] {topic}")
         print(f"  UUID: {uuid}")
 
-        if delete_recording_from_zoom(uuid):
+        success, status_code = delete_recording_from_zoom(uuid)
+
+        # Handle 401 - token expired
+        if status_code == 401:
+            print(f"    {Color.YELLOW}Token expired. Refreshing token...{Color.END}")
+            try:
+                load_access_token()
+                print(f"    {Color.GREEN}Token refreshed. Retrying...{Color.END}")
+                # Retry the deletion with new token
+                success, status_code = delete_recording_from_zoom(uuid)
+
+                # If still failing after refresh, stop
+                if status_code == 401:
+                    print(f"    {Color.RED}Still unauthorized after token refresh. Stopping deletions.{Color.END}")
+                    token_expired = True
+                    failed_deletions.append(uuid)
+                    break
+            except Exception as e:
+                print(f"    {Color.RED}Error refreshing token: {str(e)}{Color.END}")
+                token_expired = True
+                failed_deletions.append(uuid)
+                break
+
+        if success:
             successful_deletions.append(uuid)
+            # Remove from pending log
+            pending_uuids.discard(uuid)
+            try:
+                with open(pending_deletions_log, 'w') as fd:
+                    for pending_uuid in pending_uuids:
+                        fd.write(f"{pending_uuid}\n")
+            except Exception as e:
+                print(f"    {Color.YELLOW}⚠ Warning: Could not update pending log: {str(e)}{Color.END}")
         else:
             failed_deletions.append(uuid)
 
@@ -1094,6 +1142,22 @@ def delete_verified_recordings(fully_verified_recordings):
 
     if successful_deletions:
         print(f"{Color.GREEN}Successfully freed up Zoom cloud storage!{Color.END}\n")
+
+    # If there are still pending deletions, inform user
+    if pending_uuids:
+        print(f"{Color.YELLOW}⚠ {len(pending_uuids)} recording(s) remain in {pending_deletions_log}{Color.END}")
+        if token_expired:
+            print(f"{Color.YELLOW}Token expired during deletion. Re-run with --verify --delete-verified to resume.{Color.END}\n")
+        else:
+            print(f"{Color.YELLOW}You can manually review and retry deletions later.{Color.END}\n")
+    else:
+        # All deletions completed - remove the log file
+        try:
+            if os.path.exists(pending_deletions_log):
+                os.remove(pending_deletions_log)
+                print(f"{Color.DARK_CYAN}All deletions completed. Removed {pending_deletions_log}{Color.END}\n")
+        except Exception as e:
+            print(f"{Color.YELLOW}⚠ Could not remove pending log: {str(e)}{Color.END}\n")
 
 
 def list_trash_recordings(email):
